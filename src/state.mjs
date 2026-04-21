@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
+const ACKNOWLEDGED_SILENCE_WINDOW_MS = 5 * 60 * 1000;
+
 export function createDefaultState() {
   return {
     version: 1,
@@ -15,8 +17,9 @@ export function getCurrentAlarm(state) {
   return currentAlarmId ? state.alarms[currentAlarmId] ?? null : null;
 }
 
-export function shouldTriggerAlarm(state, questionId) {
-  if (state.acknowledgedQuestionIds[questionId]) {
+export function shouldTriggerAlarm(state, questionId, now = new Date().toISOString()) {
+  const acknowledgedAt = state.acknowledgedQuestionIds[questionId];
+  if (acknowledgedAt && !hasAcknowledgementExpired(acknowledgedAt, now)) {
     return false;
   }
 
@@ -70,15 +73,17 @@ export async function readState(statePath) {
   try {
     const raw = await readFile(statePath, 'utf8');
     const parsed = JSON.parse(raw);
+    const normalizedAcknowledged = normalizeAcknowledgedQuestionIds(
+      parsed.acknowledgedQuestionIds && typeof parsed.acknowledgedQuestionIds === 'object'
+        ? parsed.acknowledgedQuestionIds
+        : {},
+    );
     return {
       ...createDefaultState(),
       ...parsed,
       activeAlarmQueue: Array.isArray(parsed.activeAlarmQueue) ? parsed.activeAlarmQueue : [],
       alarms: parsed.alarms && typeof parsed.alarms === 'object' ? parsed.alarms : {},
-      acknowledgedQuestionIds:
-        parsed.acknowledgedQuestionIds && typeof parsed.acknowledgedQuestionIds === 'object'
-          ? parsed.acknowledgedQuestionIds
-          : {},
+      acknowledgedQuestionIds: normalizedAcknowledged,
     };
   } catch (error) {
     if (error.code === 'ENOENT') {
@@ -100,4 +105,20 @@ function cloneState(state) {
     alarms: { ...state.alarms },
     acknowledgedQuestionIds: { ...state.acknowledgedQuestionIds },
   };
+}
+
+function normalizeAcknowledgedQuestionIds(acknowledgedQuestionIds, now = new Date().toISOString()) {
+  return Object.fromEntries(
+    Object.entries(acknowledgedQuestionIds).filter(([, acknowledgedAt]) => !hasAcknowledgementExpired(acknowledgedAt, now)),
+  );
+}
+
+function hasAcknowledgementExpired(acknowledgedAt, now) {
+  const acknowledgedTime = Date.parse(acknowledgedAt);
+  const nowTime = Date.parse(now);
+  if (Number.isNaN(acknowledgedTime) || Number.isNaN(nowTime)) {
+    return false;
+  }
+
+  return nowTime - acknowledgedTime >= ACKNOWLEDGED_SILENCE_WINDOW_MS;
 }

@@ -43,14 +43,22 @@ test('acknowledgeCurrentAlarm removes current alarm and marks question acknowled
   assert.equal(getCurrentAlarm(next).alarmId, 'a2');
 });
 
-test('shouldTriggerAlarm skips active and acknowledged questions', () => {
+test('shouldTriggerAlarm skips active questions and recently acknowledged duplicates', () => {
   let state = createDefaultState();
   state = enqueueAlarm(state, { alarmId: 'a1', questionId: 'q1', kind: 'question', courseKey: 'course-1' });
   state = markAlarmDetected(state, 'a1', '2026-04-16T00:00:00.000Z');
 
-  assert.equal(shouldTriggerAlarm(state, 'q1'), false);
+  assert.equal(shouldTriggerAlarm(state, 'q1', '2026-04-16T00:00:00.500Z'), false);
 
   state = acknowledgeCurrentAlarm(state, '2026-04-16T00:00:01.000Z');
-  assert.equal(shouldTriggerAlarm(state, 'q1'), false);
-  assert.equal(shouldTriggerAlarm(state, 'q2'), true);
+  assert.equal(shouldTriggerAlarm(state, 'q1', '2026-04-16T00:02:00.000Z'), false);
+  assert.equal(shouldTriggerAlarm(state, 'q2', '2026-04-16T00:02:00.000Z'), true);
+});
+
+test('shouldTriggerAlarm allows a repeated question after the acknowledgement silence window expires', () => {
+  let state = createDefaultState();
+  state = enqueueAlarm(state, { alarmId: 'a1', questionId: 'q1', kind: 'question', courseKey: 'course-1' });
+  state = acknowledgeCurrentAlarm(state, '2026-04-16T00:00:00.000Z');
+
+  assert.equal(shouldTriggerAlarm(state, 'q1', '2026-04-16T00:10:00.000Z'), true);
 });
