@@ -1,0 +1,17 @@
+{
+  "name": "tophat-watcher",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test",
+    "start": "node scripts/tophat-companion.mjs",
+    "tophat:app": "node scripts/tophat-companion.mjs",
+    "tophat:login": "node scripts/tophat-watch.mjs login",
+    "tophat:watch": "node scripts/tophat-watch.mjs watch",
+    "tophat:ack": "node scripts/tophat-watch.mjs ack"
+  },
+  "dependencies": {
+    "playwright": "^1.51.0"
+  }
+}

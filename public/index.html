@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Top Hat Companion</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div>
+          <h2>Top Hat Companion</h2>
+          <p class="lede">
+            Connect Top Hat once, pick your courses, and let a single lightweight background watcher check them for you.
+          </p>
+        </div>
+        <div class="hero-actions">
+          <button id="connectButton" class="primary">Connect Top Hat</button>
+          <button id="discoverButton" class="secondary">Refresh Courses</button>
+        </div>
+      </header>
+
+      <main class="dashboard-grid">
+        <section class="panel banner hidden" id="banner"></section>
+
+        <section class="panel status-panel">
+          <div class="panel-header">
+            <h2>Status</h2>
+            <span class="status-pill" id="statusPill">Loading…</span>
+          </div>
+          <div class="status-cards" id="statusCards"></div>
+          <div class="control-row">
+            <button id="startButton" class="primary">Start Watching</button>
+            <button id="stopButton" class="secondary">Stop Watching</button>
+            <button id="ackButton" class="secondary">Acknowledge Alert</button>
+            <button id="testAlertButton" class="ghost">Test Alert</button>
+          </div>
+        </section>
+
+        <section class="panel onboarding-panel" id="onboardingPanel">
+          <div class="panel-header">
+            <h2>Getting Started</h2>
+          </div>
+          <ol class="steps">
+            <li>Connect Top Hat and sign in using the browser window that opens.</li>
+            <li>Refresh courses to pull in the classes Top Hat can see.</li>
+            <li>Turn off any course you do not want monitored.</li>
+            <li>Start watching and leave the companion running.</li>
+          </ol>
+          <section class="watch-flow" aria-labelledby="watchFlowTitle">
+            <div class="flow-header">
+              <h3 id="watchFlowTitle">When a question is detected</h3>
+              <span class="subtle">What to expect</span>
+            </div>
+            <ul class="flow-list">
+              <li>A single lightweight background watcher checks your courses one at a time until something new appears.</li>
+              <li>A repeating alert sound and desktop notification get your attention.</li>
+              <li>Top Hat opens only when needed and jumps to the course with the live question.</li>
+              <li>If Top Hat shows an answer box, the cursor is placed there for you.</li>
+              <li>Nothing is typed or submitted automatically.</li>
+            </ul>
+          </section>
+          <p class="muted" id="helperText">You should never need to edit files or use JSON.</p>
+        </section>
+
+        <section class="panel courses-panel">
+          <div class="panel-header">
+            <h2>Your Courses</h2>
+            <span class="subtle" id="courseCount">0 selected</span>
+          </div>
+          <form id="courseForm" class="course-list"></form>
+          <div class="control-row compact">
+            <button id="saveCoursesButton" class="secondary" type="button">Save Course Choices</button>
+          </div>
+        </section>
+
+        <section class="panel alerts-panel">
+          <div class="panel-header">
+            <h2>Alerts</h2>
+            <span class="subtle" id="alertCount">0 active</span>
+          </div>
+          <div id="alertsList" class="alerts-list empty-state">
+            <p>No active alerts right now.</p>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <template id="courseRowTemplate">
+      <label class="course-row">
+        <span class="course-copy">
+          <span class="course-name"></span>
+          <span class="course-url"></span>
+        </span>
+        <span class="toggle-wrap">
+          <input type="checkbox" class="course-toggle" />
+          <span class="toggle-ui"></span>
+        </span>
+      </label>
+    </template>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "courses": [
+    {
+      "name": "Example Course",
+      "lectureUrl": "https://app.tophat.com/e/123456/lecture"
+    }
+  ],
+  "pollIntervalSeconds": 10,
+  "alarmRepeatSeconds": 5,
+  "browserChannel": "chrome",
+  "focusMode": "aggressive"
+}

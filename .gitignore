@@ -1,0 +1,8 @@
+node_modules/
+.data/
+.profiles/
+.playwright-cli/
+.codex
+.impeccable.md
+win-node-*.txt
+NUL
