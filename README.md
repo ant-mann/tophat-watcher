@@ -61,8 +61,7 @@ It will not:
 
 ## Requirements
 
-- Node.js 18+ recommended
-- Google Chrome installed
+- Node.js 18+
 - A Top Hat account
 
 Platform support:
@@ -79,6 +78,8 @@ Clone the repo and install dependencies:
 ```bash
 npm install
 ```
+
+That is the only step. The `postinstall` script automatically downloads the Chrome browser that Playwright needs, so you do not have to install or configure it separately.
 
 ## Running The App
 

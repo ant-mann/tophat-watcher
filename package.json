@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "npx playwright install chrome",
     "test": "node --test test",
     "start": "node scripts/tophat-companion.mjs",
     "tophat:app": "node scripts/tophat-companion.mjs",
