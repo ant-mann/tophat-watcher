@@ -11,6 +11,7 @@ import {
   markAlarmDetected,
   readState,
   shouldTriggerAlarm,
+  updateState,
   writeState,
 } from './state.mjs';
 
@@ -166,15 +167,22 @@ export class TopHatWatcherCore {
   }
 
   async acknowledgeActiveAlarm() {
-    const state = await readState(this.statePath);
-    const currentAlarm = getCurrentAlarm(state);
+    let currentAlarm = null;
+    let nextAlarm = null;
+    await updateState(this.statePath, (state) => {
+      currentAlarm = getCurrentAlarm(state);
+      if (!currentAlarm) {
+        return state;
+      }
+
+      const next = acknowledgeCurrentAlarm(state, new Date().toISOString());
+      nextAlarm = getCurrentAlarm(next);
+      return next;
+    });
+
     if (!currentAlarm) {
       return null;
     }
-
-    const next = acknowledgeCurrentAlarm(state, new Date().toISOString());
-    await writeState(this.statePath, next);
-    const nextAlarm = getCurrentAlarm(next);
 
     if (this.running && this.activeSettings?.watcher.backgroundOnStart) {
       if (nextAlarm?.kind === 'question') {
@@ -321,7 +329,7 @@ export class TopHatWatcherCore {
   async runWatchLoop(settings, courses) {
     while (!this.stopRequested) {
       await this.waitForSessionStable();
-      if (this.currentSessionMode === 'interactive') {
+      if (this.currentSessionMode === 'interactive' && settings.watcher.backgroundOnStart) {
         await delay(500);
         continue;
       }
@@ -489,14 +497,13 @@ async function initializePollingPage(context, seedUrl) {
 }
 
 async function pollCourse({ page, course, settings, statePath, shouldFocusImmediately, onRuntimeUpdate }) {
-  let state = await readState(statePath);
   let currentPage = page;
 
   try {
     currentPage = await ensureOnCoursePage(page, course.lectureUrl);
 
     if (await isLoginRequired(currentPage)) {
-      state = await queueOperationalAlarm(statePath, state, {
+      await queueOperationalAlarm(statePath, {
         alarmId: `login:${course.courseKey}`,
         questionId: `login:${course.courseKey}`,
         kind: 'login-required',
@@ -510,56 +517,66 @@ async function pollCourse({ page, course, settings, statePath, shouldFocusImmedi
       return currentPage;
     }
 
-    state = await clearResolvedOperationalAlarms(statePath, state, [`login:${course.courseKey}`, `selector:${course.courseKey}`]);
+    await clearResolvedOperationalAlarms(statePath, [`login:${course.courseKey}`, `selector:${course.courseKey}`]);
 
-    const unansweredButton = currentPage.locator('button').filter({ hasText: /Unanswered/i }).first();
-    if ((await unansweredButton.count()) === 0) {
+    const unansweredButtons = currentPage.locator('button').filter({ hasText: /Unanswered/i });
+    const unansweredCount = await unansweredButtons.count();
+    if (unansweredCount === 0) {
       onRuntimeUpdate({ lastError: null });
       return currentPage;
     }
 
-    const buttonText = normalizeWhitespace(await unansweredButton.innerText());
-    const questionTitle = extractQuestionTitle(buttonText);
-
-    await unansweredButton.click();
-    await currentPage.waitForLoadState('domcontentloaded');
-    await currentPage.waitForTimeout(250);
-
-    const promptText = await extractPromptText(currentPage);
-    const questionId = createQuestionId(course.courseKey, questionTitle, promptText);
-
-    if (!shouldTriggerAlarm(state, questionId)) {
-      const existingAlarmId = findAlarmIdByQuestionId(state, questionId);
-      if (existingAlarmId) {
-        state = markAlarmDetected(state, existingAlarmId);
-        await writeState(statePath, state);
+    for (let index = 0; index < unansweredCount; index += 1) {
+      if (index > 0) {
+        currentPage = await navigateWithRetry(currentPage, course.lectureUrl);
       }
-      onRuntimeUpdate({ lastError: null });
-      return currentPage;
+      const unansweredButton = unansweredButtons.nth(index);
+      const buttonText = normalizeWhitespace(await unansweredButton.innerText());
+      const questionTitle = extractQuestionTitle(buttonText);
+
+      await unansweredButton.click();
+      await currentPage.waitForLoadState('domcontentloaded');
+      await currentPage.waitForTimeout(250);
+
+      const promptText = await extractPromptText(currentPage);
+      const questionSourceId = extractQuestionSourceId(currentPage, course.lectureUrl);
+      const questionId = createQuestionId(course.courseKey, questionTitle, promptText, questionSourceId);
+      let queuedAlarm = false;
+
+      await updateState(statePath, (state) => {
+        if (!shouldTriggerAlarm(state, questionId)) {
+          const existingAlarmId = findAlarmIdByQuestionId(state, questionId);
+          return existingAlarmId ? markAlarmDetected(state, existingAlarmId) : state;
+        }
+
+        queuedAlarm = true;
+        return enqueueAlarm(state, {
+          alarmId: `question:${questionId}`,
+          questionId,
+          kind: 'question',
+          courseKey: course.courseKey,
+          courseName: course.name,
+          questionTitle,
+          promptText,
+          lectureUrl: course.lectureUrl,
+          createdAt: new Date().toISOString(),
+          lastDetectedAt: new Date().toISOString(),
+        });
+      });
+
+      if (queuedAlarm) {
+        if (shouldFocusImmediately) {
+          await focusQuestion(currentPage, questionTitle);
+        }
+        onRuntimeUpdate({ lastError: null });
+        return currentPage;
+      }
     }
 
-    const alarmId = `question:${questionId}`;
-    state = enqueueAlarm(state, {
-      alarmId,
-      questionId,
-      kind: 'question',
-      courseKey: course.courseKey,
-      courseName: course.name,
-      questionTitle,
-      promptText,
-      lectureUrl: course.lectureUrl,
-      createdAt: new Date().toISOString(),
-      lastDetectedAt: new Date().toISOString(),
-    });
-    await writeState(statePath, state);
-
-    if (shouldFocusImmediately) {
-      await focusQuestion(currentPage, questionTitle);
-    }
     onRuntimeUpdate({ lastError: null });
     return currentPage;
   } catch (error) {
-    await queueOperationalAlarm(statePath, state, {
+    await queueOperationalAlarm(statePath, {
       alarmId: `selector:${course.courseKey}`,
       questionId: `selector:${course.courseKey}`,
       kind: 'selector-error',
@@ -594,30 +611,27 @@ async function dispatchAlarm(page, alarm, { shouldFocus = true, platformRuntime 
   ]);
 }
 
-async function queueOperationalAlarm(statePath, state, alarm) {
-  if (shouldTriggerAlarm(state, alarm.questionId)) {
-    const next = enqueueAlarm(state, {
-      ...alarm,
-      createdAt: new Date().toISOString(),
-      lastDetectedAt: new Date().toISOString(),
-    });
-    await writeState(statePath, next);
-    return next;
-  }
+async function queueOperationalAlarm(statePath, alarm) {
+  return updateState(statePath, (state) => {
+    if (shouldTriggerAlarm(state, alarm.questionId)) {
+      return enqueueAlarm(state, {
+        ...alarm,
+        createdAt: new Date().toISOString(),
+        lastDetectedAt: new Date().toISOString(),
+      });
+    }
 
-  const existingAlarmId = findAlarmIdByQuestionId(state, alarm.questionId);
-  if (!existingAlarmId) {
-    return state;
-  }
-
-  const next = markAlarmDetected(state, existingAlarmId, new Date().toISOString());
-  await writeState(statePath, next);
-  return next;
+    const existingAlarmId = findAlarmIdByQuestionId(state, alarm.questionId);
+    return existingAlarmId ? markAlarmDetected(state, existingAlarmId, new Date().toISOString()) : state;
+  });
 }
 
-async function clearResolvedOperationalAlarms(statePath, state, questionIds) {
+async function clearResolvedOperationalAlarms(statePath, questionIds) {
+  return updateState(statePath, (state) => clearResolvedOperationalAlarmsFromState(state, questionIds));
+}
+
+function clearResolvedOperationalAlarmsFromState(state, questionIds) {
   let next = state;
-  let changed = false;
 
   for (const questionId of questionIds) {
     const alarmId = findAlarmIdByQuestionId(next, questionId);
@@ -633,11 +647,6 @@ async function clearResolvedOperationalAlarms(statePath, state, questionIds) {
     };
     delete next.alarms[alarmId];
     delete next.acknowledgedQuestionIds[questionId];
-    changed = true;
-  }
-
-  if (changed) {
-    await writeState(statePath, next);
   }
 
   return next;
@@ -723,8 +732,17 @@ function extractQuestionTitle(buttonText) {
   return cleaned[0] ?? 'Top Hat question';
 }
 
-function createQuestionId(courseKey, questionTitle, promptText) {
-  return crypto.createHash('sha1').update(`${courseKey}\n${questionTitle}\n${promptText}`).digest('hex');
+function createQuestionId(courseKey, questionTitle, promptText, sourceId = '') {
+  const parts = [courseKey, questionTitle, promptText];
+  if (sourceId) {
+    parts.push(sourceId);
+  }
+  return crypto.createHash('sha1').update(parts.join('\n')).digest('hex');
+}
+
+function extractQuestionSourceId(page, lectureUrl) {
+  const url = page.url();
+  return url && url !== lectureUrl ? url : '';
 }
 
 function findAlarmIdByQuestionId(state, questionId) {

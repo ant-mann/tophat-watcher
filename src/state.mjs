@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const ACKNOWLEDGED_SILENCE_WINDOW_MS = 5 * 60 * 1000;
+const stateUpdateQueues = new Map();
 
 export function createDefaultState() {
   return {
@@ -96,6 +97,26 @@ export async function readState(statePath) {
 export async function writeState(statePath, state) {
   await mkdir(path.dirname(statePath), { recursive: true });
   await writeFile(statePath, JSON.stringify(state, null, 2), 'utf8');
+}
+
+export function updateState(statePath, updater) {
+  const previousUpdate = stateUpdateQueues.get(statePath) ?? Promise.resolve();
+  const update = previousUpdate
+    .catch(() => undefined)
+    .then(async () => {
+      const current = await readState(statePath);
+      const next = await updater(current);
+      await writeState(statePath, next);
+      return next;
+    });
+  const trackedUpdate = update.catch(() => undefined);
+  stateUpdateQueues.set(statePath, trackedUpdate);
+  trackedUpdate.finally(() => {
+    if (stateUpdateQueues.get(statePath) === trackedUpdate) {
+      stateUpdateQueues.delete(statePath);
+    }
+  });
+  return update;
 }
 
 function cloneState(state) {
